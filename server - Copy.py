@@ -194,76 +194,6 @@ def create_block_external_middleware():
 
     return block_external_middleware
 
-# === 新增：认证/登录相关函数开始 DONG ===
-
-
-def _load_credentials_from_dotenv():
-    """Load username/password from a .env file in the current working directory.
-    Returns (username, password) or (None, None) if not found.
-    """
-    env_path = os.path.join(os.getcwd(), ".env")
-    creds = {}
-    if os.path.exists(env_path):
-        try:
-            with open(env_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    if "=" in line:
-                        k, v = line.split("=", 1)
-                        creds[k.strip()] = v.strip().strip('"').strip("'")
-        except Exception:
-            logging.warning("Failed reading .env for auth credentials", exc_info=True)
-
-    username = creds.get("USER") or creds.get("USERNAME") or creds.get("COMFY_USER")
-    password = creds.get("PASSWORD") or creds.get("PASS") or creds.get("COMFY_PASSWORD")
-    return username, password
-
-
-def _check_auth(request: web.Request) -> bool:
-    """Check request cookies against credentials in .env."""
-    user_cookie = request.cookies.get("auth_user")
-    pass_cookie = request.cookies.get("auth_pass")
-    if not user_cookie or not pass_cookie:
-        return False
-    username, password = _load_credentials_from_dotenv()
-    if username is None or password is None:
-        return False
-    return (user_cookie == username) and (pass_cookie == password)
-
-
-def create_auth_middleware():
-    @web.middleware
-    async def auth_middleware(request: web.Request, handler):
-        # Allow the login/logout endpoints and websocket negotiation without auth
-        path = request.path
-        open_prefixes = (
-            "/login",
-            "/logout",
-            "/ws",
-            "/extensions/",
-            "/assets/",
-            "/templates/",
-            "/docs/",
-            "/static/",
-        )
-        for p in open_prefixes:
-            if path == p or path.startswith(p):
-                return await handler(request)
-
-        if _check_auth(request):
-            return await handler(request)
-
-        # Not authenticated: redirect browser GETs to the login page, otherwise 401
-        if request.method == "GET":
-            return web.HTTPFound(location="/login")
-        return web.Response(status=401, text="Unauthorized")
-
-    return auth_middleware
-
-# === 新增：认证/登录相关函数结束 DONG ===
-
 
 class PromptServer():
     def __init__(self, loop):
@@ -283,9 +213,6 @@ class PromptServer():
         self.number = 0
 
         middlewares = [cache_control, deprecation_warning]
-        # === 新增：插入认证中间件（新增） DONG ===
-        middlewares.insert(0, create_auth_middleware())
-        # === 新增：插入认证中间件结束 DONG ===
         if args.enable_compress_response_body:
             middlewares.append(compress_body)
 
@@ -381,43 +308,6 @@ class PromptServer():
                 self.sockets.pop(sid, None)
                 self.sockets_metadata.pop(sid, None)
             return ws
-
-        # === 新增：登录页面与路由开始 DONG ===
-        LOGIN_HTML = """<html><head><meta charset='utf-8'><title>Login</title></head><body>
-        <h2>Login</h2>
-        <form method='post' action='/login'>
-          <label>user: <input name='user'></label><br>
-          <label>password: <input name='password' type='password'></label><br>
-          <button type='submit'>Login</button>
-        </form>
-        </body></html>"""
-
-        @routes.get('/login')
-        async def login_get(request):
-            return web.Response(text=LOGIN_HTML, content_type='text/html')
-
-        @routes.post('/login')
-        async def login_post(request):
-            post = await request.post()
-            user = post.get('user', '')
-            pwd = post.get('password', '')
-            username, password = _load_credentials_from_dotenv()
-            if username is None or password is None:
-                return web.Response(status=500, text='Server has no credentials configured')
-            if user == username and pwd == password:
-                resp = web.HTTPFound(location='/')
-                resp.set_cookie('auth_user', user, httponly=True)
-                resp.set_cookie('auth_pass', pwd, httponly=True)
-                return resp
-            return web.Response(text="<html>Login failed. <a href='/login'>Try again</a></html>", content_type='text/html', status=401)
-
-        @routes.get('/logout')
-        async def logout(request):
-            resp = web.HTTPFound(location='/login')
-            resp.del_cookie('auth_user')
-            resp.del_cookie('auth_pass')
-            return resp
-        # === 新增：登录页面与路由结束 DONG ===
 
         @routes.get("/")
         async def get_root(request):

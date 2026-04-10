@@ -1,0 +1,29 @@
+#docker compose -f docker-compose.gpu.yml up -d --build
+#http://localhost:8188
+#docker logs -f comfyui_gpu
+#docker compose -f docker-compose.gpu.yml down
+version: "3.9"
+
+services:
+  comfyui:
+    build:
+      context: .              # Dockerfile 所在目录（ComfyUI 根目录）
+      dockerfile: Dockerfile
+    image: comfyui_gpu:local    # 镜像名改为包含 GPU 信息
+    container_name: comfyui_gpu # 容器名字
+    restart: unless-stopped
+    ports:
+      - "8188:8188"             # 宿主机端口映射
+    volumes:
+      - ./models:/app/ComfyUI/models     # 本地模型挂载
+      - ./output:/app/ComfyUI/output     # 输出结果挂载，可选
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]        # 使用 GPU
+    environment:
+      - PYTHONUNBUFFERED=1
+    tty: true
+    stdin_open: true
+    command: python main.py --listen 0.0.0.0 --port 8188

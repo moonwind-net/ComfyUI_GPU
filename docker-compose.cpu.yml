@@ -1,0 +1,21 @@
+#docker compose -f docker-compose.cpu.yml up -d --build
+version: "3.9"
+
+services:
+  comfyui:
+    build:
+      context: .               # Dockerfile_CPU 所在目录
+      dockerfile: Dockerfile_CPU
+    image: comfyui_cpu:local    # CPU 版本镜像名
+    container_name: comfyui_cpu  # 容器名
+    restart: unless-stopped
+    ports:
+      - "8188:8188"             # 宿主机端口映射
+    volumes:
+      - ./models:/app/ComfyUI/models     # 本地模型挂载
+      - ./output:/app/ComfyUI/output     # 输出结果挂载，可选
+    environment:
+      - PYTHONUNBUFFERED=1
+    tty: true
+    stdin_open: true
+    command: python main.py --listen 0.0.0.0 --port 8188           # 覆盖 Dockerfile CMD
